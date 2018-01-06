@@ -46,6 +46,13 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Connect!" />
+
+        <Button
+            android:id="@+id/main_connect_cmd"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_weight="2"
+            android:text="Cmd!" />
     </LinearLayout>
 
     <LinearLayout

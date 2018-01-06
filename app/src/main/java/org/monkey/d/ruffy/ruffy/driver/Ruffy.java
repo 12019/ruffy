@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.util.Log;
 
 import org.monkey.d.ruffy.ruffy.driver.display.DisplayParser;
 import org.monkey.d.ruffy.ruffy.driver.display.DisplayParserHandler;
@@ -23,6 +24,8 @@ import java.util.concurrent.ScheduledExecutorService;
  */
 
 public class Ruffy extends Service {
+
+    private long lastCmdMessageSent;
 
     public static class Key {
         public static byte NO_KEY				=(byte)0x00;
@@ -50,11 +53,19 @@ public class Ruffy extends Service {
 
     private Display display;
 
+    private ICmdHandler cmdHandler;
+
+    private boolean cmdModeRunning;
     private final IRuffyService.Stub serviceBinder = new IRuffyService.Stub(){
 
         @Override
         public void setHandler(IRTHandler handler) throws RemoteException {
             Ruffy.this.rtHandler = handler;
+        }
+
+        @Override
+        public void setCmdHandler(ICmdHandler handler) throws RemoteException {
+            Ruffy.this.cmdHandler = handler;
         }
 
         @Override
@@ -85,6 +96,7 @@ public class Ruffy extends Service {
             } else {
                 inShutDown=false;
                 rtModeRunning = true;
+                cmdModeRunning = false;
                 Application.sendAppCommand(Application.Command.COMMAND_DEACTIVATE,btConn);
             }
             return -1;
@@ -130,6 +142,43 @@ public class Ruffy extends Service {
 
         public boolean isConnected() {
             return btConn != null && btConn.isConnected();
+        }
+
+        @Override
+        public int doCmdConnect() throws RemoteException {
+            if(isConnected() && cmdModeRunning)
+            {
+                cmdHandler.cmdStarted();
+                return 0;
+            }
+            step= 0;
+            if(Ruffy.this.cmdHandler==null)
+            {
+                throw new IllegalStateException("XXX");
+
+//                return -2;//FIXME make errors
+            }
+            if(!isConnected()) {
+                if (pumpData == null) {
+                    pumpData = PumpData.loadPump(Ruffy.this, rtHandler);
+                }
+                if (pumpData != null) {
+                    inShutDown=false;
+                    btConn = new BTConnection(rtBTHandler);
+                    cmdModeRunning = true;
+                    btConn.connect(pumpData, 10);
+                    return 0;
+                }
+            } else {
+                cmdModeRunning = true;
+                rtModeRunning=false;
+                Application.sendAppCommand(Application.Command.RT_DEACTIVATE,btConn);
+            }
+            return -1;
+        }
+        @Override
+        public void doCmdDisconnect() {
+
         }
     };
 
@@ -191,6 +240,7 @@ public class Ruffy extends Service {
             else
                 Ruffy.this.fail(s);
 
+            Log.e("RuffyService",s);
         }
 
         @Override
@@ -314,7 +364,7 @@ public class Ruffy extends Service {
     private Runnable synThread = new Runnable(){
         @Override
         public void run() {
-            while(synRun && rtModeRunning)
+            while(synRun && (rtModeRunning||cmdModeRunning))
             {
                 Protocol.sendSyn(btConn);
                 try {
@@ -334,7 +384,10 @@ public class Ruffy extends Service {
 
         @Override
         public void connected() {
-            Application.sendAppCommand(Application.Command.RT_MODE, btConn);
+            if(rtModeRunning)
+                Application.sendAppCommand(Application.Command.RT_MODE, btConn);
+            else if (cmdModeRunning)
+                Application.sendAppCommand(Application.Command.COMMAND_MODE, btConn);
         }
 
         @Override
@@ -343,28 +396,55 @@ public class Ruffy extends Service {
         }
 
         @Override
+        public void cmdModeActivated() {
+            startCmd();
+        }
+
+        @Override
         public void rtModeDeactivated() {
             rtSequence =0;
 
             if(rtHandler!=null)
                 try {rtHandler.rtStopped();} catch (RemoteException e){};
+
+            if(cmdModeRunning) {
+                Application.sendAppCommand(Application.Command.COMMAND_MODE,btConn);
+            } else {
                 if(!inShutDown) {
                     inShutDown = true;
                     Application.sendAppDisconnect(btConn);
                     btConn.disconnect();
                 }
+            }
         }
 
         @Override
         public void cmdModeDeactivated() {
+            rtSequence =0;
+
+            if(cmdHandler!=null)
+                try {cmdHandler.cmdStopped();} catch (RemoteException e){};
+
+            if(rtModeRunning) {
+                Application.sendAppCommand(Application.Command.RT_MODE,btConn);
+            } else {
+                if(!inShutDown) {
+                    inShutDown = true;
+                    Application.sendAppDisconnect(btConn);
+                    btConn.disconnect();
+                }
+            }
         }
 
         @Override
         public void modeDeactivated() {
             rtModeRunning = false;
+            cmdModeRunning = false;
             rtSequence =0;
             if(rtHandler!=null)
                 try {rtHandler.rtStopped();} catch (RemoteException e){};
+            if(cmdHandler!=null)
+                try {cmdHandler.cmdStopped();} catch (RemoteException e){};
             if(!inShutDown) {
                 inShutDown = true;
                 Application.sendAppDisconnect(btConn);
@@ -409,6 +489,46 @@ public class Ruffy extends Service {
             }
         }
     };
+
+    private void startCmd() {
+        log("starting Cmd keepAlive");
+        new Thread(){
+            @Override
+            public void run() {
+                cmdModeRunning = true;
+                lastCmdMessageSent = System.currentTimeMillis();
+                try {
+                    cmdHandler.cmdStarted();
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+                while(cmdModeRunning)
+                {
+                    try {
+                        if (System.currentTimeMillis() > lastCmdMessageSent + 5000L) {
+                            log("sending keep alive");
+                            Application.sendCmdKeepAlive(btConn);
+                            lastCmdMessageSent = System.currentTimeMillis();
+                        }
+                    } catch (Exception e) {
+                        if (cmdModeRunning) {
+                            fail("Error sending keep alive while cmdModeRunning is still true");
+                        } else {
+                            fail("Error sending keep alive. cmdModeRunning is false, so this is most likely a race condition during disconnect");
+                        }
+                    }
+                    try{
+                        Thread.sleep(500);}catch(Exception e){/*ignore*/}
+                }
+                try {
+                    cmdHandler.cmdStopped();
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+
+            }
+        }.start();
+    }
 
     public void log(String s) {
         try{

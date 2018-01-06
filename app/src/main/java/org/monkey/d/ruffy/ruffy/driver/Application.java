@@ -1,5 +1,7 @@
 package org.monkey.d.ruffy.ruffy.driver;
 
+import android.util.Log;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
@@ -12,6 +14,10 @@ public class Application {
      * how often we accept an mode error before accepting we are in the wrong mode
      */
     public static int MODE_ERROR_TRESHHOLD = 3;
+
+    public static void sendCmdKeepAlive(BTConnection btConn) {
+        sendAppCommand(Command.CMD_PING,btConn);
+    }
 
     public static enum Command
     {
@@ -161,11 +167,14 @@ public class Application {
                 break;
 
             case CMD_PING:
+                payload = ByteBuffer.allocate(4);
                 payload.put((byte)16);
                 payload.put((byte)0xB7);
                 payload.put((byte) (0x9AAA & 0xFF));
                 payload.put((byte) ((0x9AAA>>8) & 0xFF));
-                reliable = false;
+                reliable = true;
+                break;
+
             case DEACTIVATE_ALL:
                 Log.d("ApplicatioN","Send deactivate");
                 payload = ByteBuffer.allocate(4);
@@ -324,6 +333,9 @@ public class Application {
                 case (short) 0xA06A://service all deactivate
                     descrip = "AL_DEACTIVATE_ALL_RES";
                     handler.modeDeactivated();
+                    break;
+                case (short)0xAAAA: //ping response
+                    descrip = "CMD_PING_RES";
                     break;
                 default:
                     descrip = "UNKNOWN";

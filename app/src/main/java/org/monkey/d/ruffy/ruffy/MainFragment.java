@@ -22,6 +22,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import org.monkey.d.ruffy.ruffy.driver.ICmdHandler;
 import org.monkey.d.ruffy.ruffy.driver.IRTHandler.Stub;
 import org.monkey.d.ruffy.ruffy.driver.IRuffyService;
 import org.monkey.d.ruffy.ruffy.driver.Ruffy;
@@ -44,10 +45,11 @@ public class MainFragment extends Fragment implements View.OnClickListener {
     private TextView connectLog;
     private TextView frameCounter;
     private Button connect;
+    private Button connect_cmd;
+
     private PumpDisplayView displayView;
     private LinearLayout displayLayout;
     private TextView versionNameView;
-
 
     private ScheduledExecutorService scheduler = Executors.newScheduledThreadPool( 3 );
 
@@ -71,6 +73,7 @@ public class MainFragment extends Fragment implements View.OnClickListener {
 
             try {
                 mBoundService.setHandler(handler);
+                mBoundService.setCmdHandler(cmdHandler);
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
@@ -166,131 +169,22 @@ public class MainFragment extends Fragment implements View.OnClickListener {
         }
     }
 
-    private Stub handler = new Stub() {
-        @Override
-        public void log(String message) throws RemoteException {
-            appendLog(message);
-        }
-
-        @Override
-        public void fail(String message) throws RemoteException {
-            appendLog("fail: "+message);
-        /*getActivity().runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                connect.setText("Try Connect again!");
-                connect.setEnabled(true);
-            }
-        });*/
-        }
-
-        @Override
-        public void requestBluetooth() throws RemoteException {
-            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            getActivity().startActivityForResult(enableBtIntent, 1);
-        }
-
-        public void rtStarted()
-        {
-            getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        if (mBoundService.isConnected()) {
-                            connect.setText("Disconnect");
-                        } else {
-                            connect.setText("Connect");
-                        }
-                    } catch (RemoteException e) {
-                        e.printStackTrace();
-                    }
-                    connect.setEnabled(true);
-                }
-            });
-        }
-
-        @Override
-        public void rtClearDisplay() throws RemoteException {
-            displayView.clear();
-        }
-
-        //TODO just for debug marker byte[][] display = new byte[4][];
-        @Override
-        public void rtUpdateDisplay(byte[] quarter, int which) throws RemoteException {
-
-            displayView.update(quarter,which);
-
-            //TODO just for debug marker display[which] = quarter;
-            if (connectLog.getVisibility() != View.GONE)
-                getActivity().runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        connectLog.setVisibility(View.GONE);
-                    }
-                });
-        }
-
-        @Override
-        public void rtDisplayHandleMenu(final Menu menu) throws RemoteException {
-            getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    String s = "";
-                    for(MenuAttribute ma : menu.attributes())
-                    {
-                        s+="\n"+ma+": "+menu.getAttribute(ma);
-                    }
-
-                    frameCounter.setText("display found: "+menu.getType()+s);
-                }
-            });
-        }
-
-        @Override
-        public void rtDisplayHandleNoMenu() throws RemoteException {
-            getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    frameCounter.setText("no display found");
-/*                    DisplayParser.findMenu(display, new DisplayParserHandler() {
-                        @Override
-                        public void menuFound(Menu menu) {
-
-                        }
-
-                        @Override
-                        public void noMenuFound() {
-
-                        }
-                    });*///TODO just for debug marker
-                }
-            });
-        }
-
-        public void rtStopped()
-        {
-            getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    connectLog.setVisibility(View.VISIBLE);
-                }
-            });
-        }
-    };
-
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
 
         View v = inflater.inflate(R.layout.fragment_main, container, false);
-        
+
         try {
             versionNameView = (TextView) v.findViewById(R.id.versionName);
             versionNameView.setText(getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0).versionName);
         } catch (PackageManager.NameNotFoundException e) {}
-        
+
         connect = (Button) v.findViewById(R.id.main_connect);
         connect.setOnClickListener(this);
+
+        connect_cmd = (Button) v.findViewById(R.id.main_connect_cmd);
+        connect_cmd.setOnClickListener(this);
 
         Button reset = (Button) v.findViewById(R.id.main_reset);
         reset.setOnClickListener(new View.OnClickListener() {
@@ -386,23 +280,211 @@ public class MainFragment extends Fragment implements View.OnClickListener {
         return v;
     }
 
+    private Stub handler = new Stub() {
+        @Override
+        public void log(String message) throws RemoteException {
+            appendLog(message);
+        }
+
+        @Override
+        public void fail(String message) throws RemoteException {
+            appendLog("fail: "+message);
+        /*getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                connect.setText("Try Connect again!");
+                connect.setEnabled(true);
+            }
+        });*/
+        }
+
+        @Override
+        public void requestBluetooth() throws RemoteException {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            getActivity().startActivityForResult(enableBtIntent, 1);
+        }
+
+        public void rtStarted()
+        {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (mBoundService.isConnected()) {
+                            connect.setText("Disconnect");
+                            connect_cmd.setText("Con!");
+                        } else {
+                            connect.setText("Connect!");
+                            connect_cmd.setText("Con!");
+                        }
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
+                    connect.setEnabled(true);
+                    displayView.setVisibility(View.VISIBLE);
+                }
+            });
+        }
+
+        @Override
+        public void rtClearDisplay() throws RemoteException {
+            displayView.clear();
+        }
+
+        //TODO just for debug marker byte[][] display = new byte[4][];
+        @Override
+        public void rtUpdateDisplay(byte[] quarter, int which) throws RemoteException {
+
+            displayView.update(quarter,which);
+
+            //TODO just for debug marker display[which] = quarter;
+            if (connectLog.getVisibility() != View.GONE)
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        connectLog.setVisibility(View.GONE);
+                    }
+                });
+        }
+
+        @Override
+        public void rtDisplayHandleMenu(final Menu menu) throws RemoteException {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    String s = "";
+                    for(MenuAttribute ma : menu.attributes())
+                    {
+                        s+="\n"+ma+": "+menu.getAttribute(ma);
+                    }
+
+                    frameCounter.setText("display found: "+menu.getType()+s);
+                }
+            });
+        }
+
+        @Override
+        public void rtDisplayHandleNoMenu() throws RemoteException {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    frameCounter.setText("no display found");
+/*                    DisplayParser.findMenu(display, new DisplayParserHandler() {
+                        @Override
+                        public void menuFound(Menu menu) {
+
+                        }
+
+                        @Override
+                        public void noMenuFound() {
+
+                        }
+                    });*///TODO just for debug marker
+                }
+            });
+        }
+
+        public void rtStopped()
+        {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    connectLog.setVisibility(View.VISIBLE);
+                    displayView.setVisibility(View.GONE);
+                    connect.setEnabled(true);
+                }
+            });
+        }
+    };
+
+    private ICmdHandler.Stub cmdHandler = new ICmdHandler.Stub() {
+        @Override
+        public void log(String message) throws RemoteException {
+            appendLog(message);
+        }
+
+        @Override
+        public void fail(String message) throws RemoteException {
+            appendLog("fail: "+message);
+        }
+
+        @Override
+        public void requestBluetooth() throws RemoteException {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            getActivity().startActivityForResult(enableBtIntent, 1);
+        }
+
+        @Override
+        public void cmdStopped() throws RemoteException {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    connectLog.setVisibility(View.VISIBLE);
+                    displayView.setVisibility(View.GONE);
+                    connect_cmd.setEnabled(true);
+                }
+            });
+        }
+
+        @Override
+        public void cmdStarted() throws RemoteException {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (mBoundService.isConnected()) {
+                            connect_cmd.setText("Disc");
+                            connect.setText("Connect!");
+                        } else {
+                            connect_cmd.setText("Cmd!");
+                            connect.setText("Connect!");
+                        }
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
+                    connect_cmd.setEnabled(true);
+                    displayView.setVisibility(View.VISIBLE);
+                }
+            });
+        }
+    };
+
     @Override
     public void onClick(final View view) {
-        view.setEnabled(false);
-        if(connect.getText().toString().startsWith("Disco"))
-        {
+        if(view == connect) {
+            view.setEnabled(false);
+            if (connect.getText().toString().startsWith("Disco")) {
+                try {
+                    mBoundService.doRTDisconnect();//FIXME
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+                connect.setText("Connect!");
+                connect_cmd.setText("Cmd!");
+                return;
+            }
             try {
-                mBoundService.doRTDisconnect();//FIXME
+                mBoundService.doRTConnect();
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
-            connect.setText("Connect!");
-            return;
-        }
-        try {
-            mBoundService.doRTConnect();
-        } catch (RemoteException e) {
-            e.printStackTrace();
+        } else if(view == connect_cmd) {
+            view.setEnabled(false);
+            if (connect_cmd.getText().toString().startsWith("Disc")) {
+                try {
+                    mBoundService.doCmdDisconnect();
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+                connect_cmd.setText("Cmd!");
+                connect.setText("Connect!");
+                return;
+            }
+            try {
+                mBoundService.doCmdConnect();
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
         }
     }
 

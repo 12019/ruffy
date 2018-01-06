@@ -3,10 +3,12 @@ package org.monkey.d.ruffy.ruffy.driver;
 
 // Declare any non-default types here with import statements
 import org.monkey.d.ruffy.ruffy.driver.IRTHandler;
+import org.monkey.d.ruffy.ruffy.driver.ICmdHandler;
 
 interface IRuffyService {
 
     void setHandler(IRTHandler handler);
+    void setCmdHandler(ICmdHandler handler);
 
     /** Connect to the pump
     *
@@ -21,4 +23,8 @@ interface IRuffyService {
     void rtSendKey(byte keyCode, boolean changed);
     void resetPairing();
     boolean isConnected();
+
+    int doCmdConnect();
+
+    void doCmdDisconnect();
 }
