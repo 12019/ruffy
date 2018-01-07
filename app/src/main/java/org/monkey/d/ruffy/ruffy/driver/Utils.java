@@ -158,7 +158,7 @@ public class Utils {
             out.add(Byte.valueOf((byte) 0));
         }
     }
-    private static short updateCrc(short crc, byte input) {
+    protected static short updateCrc(short crc, byte input) {
         Object[] objArr = new Object[1];
         objArr[0] = Byte.valueOf(input);
         short crcTemp = (short) (((short) input) ^ crc);

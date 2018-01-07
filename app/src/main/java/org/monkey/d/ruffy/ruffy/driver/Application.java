@@ -4,6 +4,7 @@ import android.util.Log;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Calendar;
 import java.util.List;
 
 /**
@@ -17,6 +18,82 @@ public class Application {
 
     public static void sendCmdKeepAlive(BTConnection btConn) {
         sendAppCommand(Command.CMD_PING,btConn);
+    }
+
+    public static void doCmdBolus(int bolus, BTConnection conn) {
+        ByteBuffer payload = ByteBuffer.allocate(26);
+
+        payload.put((byte) 16);
+        payload.put((byte) 0xB7);
+        payload.put((byte) 0x69);				//CBOL_DELIVER_BOLUS Command
+        payload.put((byte) 0x96);
+
+        //CRC starts here
+        payload.put((byte) 0x55);				//Hard coded standard bolus mode
+        payload.put((byte) 0x59);
+
+        payload.order(ByteOrder.LITTLE_ENDIAN);
+
+        payload.putShort((short) bolus);			//Ch1 amount 0.1U increments
+        payload.putShort((short) 0);				//Ch1 duration in minutes
+        payload.putShort((short) 0);				//Ch1 fast amount
+
+        payload.putFloat((float) bolus);			//Ch2 amount 0.1U increments
+        payload.putFloat(0);						//Ch2 duration in minutes
+        payload.putFloat(0);						//Ch2 fast amount
+        //CRC ends here
+
+        short crc = (short)0xFFFF;
+        for(int i = 4;i<24;i++)
+            crc = Utils.updateCrc(crc, payload.get(i));
+
+        payload.putShort(crc);
+
+        sendData(payload,true,conn);
+    }
+
+    public static void doCmdBolusState(BTConnection btConn) {
+        ByteBuffer payload = ByteBuffer.allocate(4);
+
+        payload.put((byte)16);
+        payload.put((byte)0xB7);
+        payload.put((byte) 0x6A);				//CBOL_IMMEDIATE_BOLUS_STATUS_REQ Command
+        payload.put((byte) 0x96);
+
+        sendData(payload,true,btConn);
+    }
+
+    public static void doCmdBolusCancel(BTConnection btConn) {
+        ByteBuffer payload = ByteBuffer.allocate(5);
+
+        payload.put((byte) 16);
+        payload.put((byte) 0xB7);
+        payload.put((byte) 0x95);
+        payload.put((byte) 0x96);
+        payload.put((byte) 0x47);
+
+        sendData(payload,true,btConn);
+    }
+
+    public static void doCmdHistorie(BTConnection btConn) {
+        ByteBuffer payload = ByteBuffer.allocate(4);
+
+        payload.put((byte) 16);
+        payload.put((byte) 0xB7);
+        payload.put((byte) 0x96);
+        payload.put((byte) 0x99);
+
+        sendData(payload,true,btConn);
+    }
+
+    public static void doCmdHistorieAck(BTConnection btConn) {
+        ByteBuffer payload = ByteBuffer.allocate(4);
+        payload.put((byte)16);
+        payload.put((byte)0xB7);
+        payload.put((byte)0x99);
+        payload.put((byte)0x99);
+
+        sendData(payload,true,btConn);
     }
 
     public static enum Command
@@ -337,6 +414,124 @@ public class Application {
                 case (short)0xAAAA: //ping response
                     descrip = "CMD_PING_RES";
                     break;
+                case (short)0xA669:
+                    descrip = "CMD_BOLUS_STARTED";
+                    // 10 B7 69 A6 00 00 48 38 20 4D 2E 44 91 A2 EA CC
+                    handler.cmdBolusStarted(b.get()==0x48);
+                    break;
+                case (short)0xA695:
+                    descrip = "CMD_BOLUS_CANCELED";
+                    handler.cmdBolusCanceled(b.get()==0x48);
+                    break;
+                case (short)0xA66A: {
+                    descrip = "CMD_BOLUS_STATUS";
+                    b.get();//ignore
+                    byte status = b.get();
+                    short rem = b.getShort();
+
+                    switch (status) {
+                        case (byte) 0x55:
+                            handler.cmdBolusState(BolusState.NOT_DELIVERING,(double)(rem/10.0));
+                            break;
+                        case (byte) 0x66:
+                            handler.cmdBolusState(BolusState.DELIVERING,(double)(rem/10.0));
+                            break;
+                        case (byte) 0x99:
+                            handler.cmdBolusState(BolusState.DELIVERED,(double)(rem/10.0));
+                            break;
+                        case (byte) 0xA9:
+                            handler.cmdBolusState(BolusState.CANCELED,(double)(rem/10.0));
+                            break;
+                        case (byte) 0xAA:
+                            handler.cmdBolusState(BolusState.ABORTED,(double)(rem/10.0));
+                            break;
+                        default:
+                            handler.cmdBolusState(BolusState.UNKNOWN,(double)(rem/10.0));
+                    }
+                }   break;
+
+                case (short)0xA996:
+                    descrip = "CMD_HISTORY";
+                {
+                    b.order(ByteOrder.LITTLE_ENDIAN);
+
+                    short histRem = b.getShort();
+                    byte end = b.get();
+                    byte histGap = b.get();
+                    byte numEvents = b.get();
+                    boolean more = true;
+                    if (end == 0x48)                            //0x48 indicates more events are available
+                        more = false;
+                    byte[] data = new byte[4];
+                    byte[] time = new byte[4];
+                    for (int i = 0; i < numEvents; i++) {
+                        //Extract the data from the event
+                        b.get(time);
+                        b.get(data);
+                        short eventId = b.getShort();
+                        short check = b.getShort();
+                        long eventCnt = (long) b.getInt();
+                        short checkCnt = b.getShort();
+
+                        ByteBuffer d = ByteBuffer.wrap(data);
+                        d.order(ByteOrder.LITTLE_ENDIAN);
+
+                        // Get the time data *******************************************************************************
+                        int seconds = time[0] & 0x3F;
+                        int minutes = (time[0] >> 6) & 0x03;
+                        minutes |= (time[1] << 2) & 0x3C;
+                        int hours = (time[1] >> 4) & 0x0F;
+                        hours |= (time[2] << 4) & 0x10;
+                        int day = (time[2] >> 1) & 0x1F;
+                        int month = (time[2] >> 6) & 0x03;
+                        month |= (time[3] << 2) & 0x0C;
+                        int year = (time[3] >> 2) & 0x3F;
+
+                        long ts = dateToMS(day, month, year, hours, minutes, seconds);
+
+                        switch (eventId) {
+                            case 15:
+                            case 17:
+                            {
+                                double infused = d.getShort() / 10.0d;
+                                boolean manual = false;
+                                if(eventId == 7)
+                                {
+                                    manual = true;
+                                }
+                                handler.reportBolusDelivered(manual,infused,ts,eventCnt,eventId);
+                            }
+                            break;
+                            case 14:
+                            case 6:
+                            {
+                                double requested = d.getShort() / 10.0d;
+                                boolean manual = false;
+                                if(eventId == 7)
+                                {
+                                    manual = true;
+                                }
+                                handler.reportBolusRequest(manual,requested,ts,eventCnt,eventId);
+                            }
+                            break;
+                            default:
+                                Log.v("Application","unknown eventid:"+eventId);
+                                break;
+                        }
+                    }
+                    if(numEvents>0) {
+                        handler.doConfirmHistorie();
+                    }
+                    if((histRem - numEvents) > 0)
+                    {
+                        handler.doReadHistorie();
+                    }
+                }
+                    break;
+                case (short)0xA999:
+                    descrip = "CMD_HISTORY_ACK";
+                    break;
+
                 default:
                     descrip = "UNKNOWN";
                     break;
@@ -393,5 +588,19 @@ public class Application {
             handler.error(error,desc);
             return false;
         }
+    }
+
+    private static long dateToMS(int day, int month, int year, int hours, int minutes, int seconds)
+    {
+        final String FUNC_TAG = "dateToSeconds";
+
+        long total = 0;
+
+        Calendar epoch = Calendar.getInstance();
+        epoch.clear();
+        epoch.set(year+2000, month-1, day, hours, minutes, seconds);
+        total = epoch.getTimeInMillis();
+
+        return total;
     }
 }

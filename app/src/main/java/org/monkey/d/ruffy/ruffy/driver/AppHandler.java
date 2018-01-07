@@ -27,4 +27,18 @@ public interface AppHandler {
     void sequenceError();
 
     void error(short error, String desc);
+
+    void cmdBolusStarted(boolean success);
+
+    void cmdBolusState(BolusState notDelivering, double remaining);
+
+    void cmdBolusCanceled(boolean b);
+
+    void reportBolusDelivered(boolean manual, double infused, long ts, long eventCnt, short eventId);
+
+    void reportBolusRequest(boolean manual, double requested, long ts, long eventCnt, short eventId);
+
+    void doConfirmHistorie();
+
+    void doReadHistorie();
 }

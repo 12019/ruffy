@@ -93,6 +93,12 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="\u2713" />
+
+                <Button
+                    android:id="@+id/bolus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="B!" />
             </LinearLayout>
 
             <LinearLayout
@@ -111,6 +117,12 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="\u21E9" />
+
+                <Button
+                    android:id="@+id/historie"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="H!" />
             </LinearLayout>
         </LinearLayout>
 
