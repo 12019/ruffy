@@ -17,6 +17,7 @@ interface ICmdHandler {
     void bolusStarted(boolean success);
     void bolusCancled(boolean success);
     void bolusStatus(int status,double remaining);
+
     void reportBolusDelivered(boolean manual, double infused, long ts, long eventCnt, int eventId);
     void reportBolusRequested(boolean manual, double infused, long ts, long eventCnt, int eventId);
 }

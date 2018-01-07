@@ -605,7 +605,6 @@ public class MainFragment extends Fragment implements View.OnClickListener {
         public void reportBolusRequested(boolean manual, double infused, long ts, long eventCnt, int eventId) throws RemoteException {
             appendLog("requestedBolus: "+infused+"u, manual:"+manual+" at "+(SimpleDateFormat.getDateTimeInstance().format(new Date(ts)))+" eventid:"+eventId+" cnt:"+eventCnt);
         }
-
     };
 
     @Override

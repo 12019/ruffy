@@ -27,9 +27,10 @@ interface IRuffyService {
     int doCmdConnect();
 
     void doCmdBolus(double bolus);
+    void doCmdBolusState();
+    void doCmdBolusCancel();
+
     void doCmdHistorie();
 
     void doCmdDisconnect();
-    void doCmdBolusState();
-    void doCmdBolusCancel();
 }
