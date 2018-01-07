@@ -19,6 +19,61 @@ public class Application {
         sendAppCommand(Command.CMD_PING,btConn);
     }
 
+    public static void doCmdBolus(int bolus, BTConnection conn) {
+        ByteBuffer payload = ByteBuffer.allocate(26);
+
+        payload.put((byte) 16);
+        payload.put((byte) 0xB7);
+        payload.put((byte) 0x69);				//CBOL_DELIVER_BOLUS Command
+        payload.put((byte) 0x96);
+
+        //CRC starts here
+        payload.put((byte) 0x55);				//Hard coded standard bolus mode
+        payload.put((byte) 0x59);
+
+        payload.order(ByteOrder.LITTLE_ENDIAN);
+
+        payload.putShort((short) bolus);			//Ch1 amount 0.1U increments
+        payload.putShort((short) 0);				//Ch1 duration in minutes
+        payload.putShort((short) 0);				//Ch1 fast amount
+
+        payload.putFloat((float) bolus);			//Ch2 amount 0.1U increments
+        payload.putFloat(0);						//Ch2 duration in minutes
+        payload.putFloat(0);						//Ch2 fast amount
+        //CRC ends here
+
+        short crc = (short)0xFFFF;
+        for(int i = 4;i<24;i++)
+            crc = Utils.updateCrc(crc, payload.get(i));
+
+        payload.putShort(crc);
+
+        sendData(payload,true,conn);
+    }
+
+    public static void doCmdBolusState(BTConnection btConn) {
+        ByteBuffer payload = ByteBuffer.allocate(4);
+
+        payload.put((byte)16);
+        payload.put((byte)0xB7);
+        payload.put((byte) 0x6A);				//CBOL_IMMEDIATE_BOLUS_STATUS_REQ Command
+        payload.put((byte) 0x96);
+
+        sendData(payload,true,btConn);
+    }
+
+    public static void doCmdBolusCancel(BTConnection btConn) {
+        ByteBuffer payload = ByteBuffer.allocate(5);
+
+        payload.put((byte) 16);
+        payload.put((byte) 0xB7);
+        payload.put((byte) 0x95);
+        payload.put((byte) 0x96);
+        payload.put((byte) 0x47);		//Bolus Type:  Standard Wave Bolus
+
+        sendData(payload,true,btConn);
+    }
+
     public static enum Command
     {
         COMMANDS_SERVICES_VERSION,
@@ -337,6 +392,41 @@ public class Application {
                 case (short)0xAAAA: //ping response
                     descrip = "CMD_PING_RES";
                     break;
+                case (short)0xA669:
+                    descrip = "CMD_BOLUS_STARTED";
+                    // 10 B7 69 A6 00 00 48 38 20 4D 2E 44 91 A2 EA CC
+                    handler.cmdBolusStarted(b.get()==0x48);
+                    break;
+                case (short)0xA695:
+                    descrip = "CMD_BOLUS_CANCELED";
+                    handler.cmdBolusCanceled(b.get()==0x48);
+                    break;
+                case (short)0xA66A: {
+                    descrip = "CMD_BOLUS_STATUS";
+                    b.get();//ignore
+                    byte status = b.get();
+                    short rem = b.getShort();
+
+                    switch (status) {
+                        case (byte) 0x55:
+                            handler.cmdBolusState(BolusState.NOT_DELIVERING,(double)(rem/10.0));
+                            break;
+                        case (byte) 0x66:
+                            handler.cmdBolusState(BolusState.DELIVERING,(double)(rem/10.0));
+                            break;
+                        case (byte) 0x99:
+                            handler.cmdBolusState(BolusState.DELIVERED,(double)(rem/10.0));
+                            break;
+                        case (byte) 0xA9:
+                            handler.cmdBolusState(BolusState.CANCELED,(double)(rem/10.0));
+                            break;
+                        case (byte) 0xAA:
+                            handler.cmdBolusState(BolusState.ABORTED,(double)(rem/10.0));
+                            break;
+                        default:
+                            handler.cmdBolusState(BolusState.UNKNOWN,(double)(rem/10.0));
+                    }
+                }   break;
                 default:
                     descrip = "UNKNOWN";
                     break;

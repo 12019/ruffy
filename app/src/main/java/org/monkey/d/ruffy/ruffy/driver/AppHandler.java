@@ -27,4 +27,10 @@ public interface AppHandler {
     void sequenceError();
 
     void error(short error, String desc);
+
+    void cmdBolusStarted(boolean success);
+
+    void cmdBolusState(BolusState notDelivering, double remaining);
+
+    void cmdBolusCanceled(boolean b);
 }

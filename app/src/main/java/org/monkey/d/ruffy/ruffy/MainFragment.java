@@ -1,6 +1,7 @@
 package org.monkey.d.ruffy.ruffy;
 
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.content.ComponentName;
 import android.content.Context;
@@ -19,6 +20,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -34,7 +36,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 
 /**
@@ -268,6 +271,38 @@ public class MainFragment extends Fragment implements View.OnClickListener {
                 return false;
             }
         });
+
+        Button bolus= (Button) displayLayout.findViewById(R.id.bolus);
+        bolus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                AlertDialog.Builder alert = new AlertDialog.Builder(getContext());
+
+                alert.setTitle("Enter bolus");
+                alert.setMessage("use . for fractions (1.5 not 1,5)");
+
+                final EditText input = new EditText(getContext());
+                alert.setView(input);
+
+                alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int whichButton) {
+                        String value = input.getText().toString();
+                        double bolus = Double.parseDouble(value);
+
+                        try {mBoundService.doCmdBolus(bolus);}catch(Exception e){e.printStackTrace();}
+                    }
+                });
+
+                alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int whichButton) {
+                        // Canceled.
+                    }
+                });
+
+                alert.show();
+            }
+        });
+
         Intent intent = new Intent(getActivity(), Ruffy.class);
         ComponentName name = getActivity().startService(intent);
         if(name != null)
@@ -398,6 +433,8 @@ public class MainFragment extends Fragment implements View.OnClickListener {
     };
 
     private ICmdHandler.Stub cmdHandler = new ICmdHandler.Stub() {
+        public ScheduledFuture future;
+
         @Override
         public void log(String message) throws RemoteException {
             appendLog(message);
@@ -447,6 +484,110 @@ public class MainFragment extends Fragment implements View.OnClickListener {
                 }
             });
         }
+
+        ProgressDialog progess;
+        boolean running;
+        @Override
+        public void bolusStarted(boolean success) throws RemoteException {
+            if (success) {
+                running = true;
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+
+                        String title = "bolus";
+
+                        progess = new ProgressDialog(getActivity());
+                        progess.setTitle(title);
+
+                        progess.setButton(DialogInterface.BUTTON_NEGATIVE,"Cancel", new DialogInterface.OnClickListener() {
+
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                try {
+                                    if(running)
+                                    {
+                                        mBoundService.doCmdBolusCancel();
+                                    } else {
+                                        progess.dismiss();
+                                    }
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        });
+
+                        progess.setOnDismissListener(new DialogInterface.OnDismissListener() {
+                            @Override
+                            public void onDismiss(DialogInterface dialog) {
+                                future.cancel(false);
+                            }
+                        });
+
+                        progess.show();
+
+                        progess.setCancelable(false);
+                        progess.setCanceledOnTouchOutside(false);
+
+                        future = scheduler.scheduleAtFixedRate(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    mBoundService.doCmdBolusState();
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+
+                            }
+                        }, 0l, 500, TimeUnit.MILLISECONDS);
+                    }
+
+                });
+            }
+        }
+
+        @Override
+        public void bolusCancled(final boolean success) throws RemoteException {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    progess.setMessage("Cancled: " + success);
+                }});
+        }
+
+        @Override
+        public void bolusStatus(final int status, final double remaining) throws RemoteException {
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    switch (status) {
+                        case 10:
+                            progess.setMessage("Aborted");
+                            running = false;
+                            break;
+                        case 5:
+                            progess.setMessage("Cancled");
+                            running = false;
+                            break;
+                        case 1:
+                            progess.setMessage("Delivering, remaining: " + remaining);
+                            break;
+                        case 2:
+                            progess.setMessage("Delivered, remaining: " + remaining);
+                            running = false;
+                            break;
+                        case 20:
+                            progess.setMessage("Not Delivering");
+                            running = false;
+                            break;
+                        case -1:
+                            progess.setMessage("unknown state :/");
+                            running = false;
+                            break;
+                    }
+                }});
+        }
+
     };
 
     @Override

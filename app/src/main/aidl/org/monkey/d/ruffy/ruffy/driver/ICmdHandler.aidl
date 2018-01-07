@@ -10,7 +10,11 @@ interface ICmdHandler {
     void fail(String message);
 
     void requestBluetooth();
+
     void cmdStopped();
     void cmdStarted();
 
+    void bolusStarted(boolean success);
+    void bolusCancled(boolean success);
+    void bolusStatus(int status,double remaining);
 }

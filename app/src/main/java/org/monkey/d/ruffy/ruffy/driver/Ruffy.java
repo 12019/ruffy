@@ -178,6 +178,30 @@ public class Ruffy extends Service {
         }
         @Override
         public void doCmdDisconnect() {
+            step = 200;
+            stopCmd();
+        }
+
+        @Override
+        public void doCmdBolusState() {
+            lastCmdMessageSent = System.currentTimeMillis();
+            Application.doCmdBolusState(btConn);
+        }
+
+        @Override
+        public void doCmdBolusCancel() throws RemoteException {
+            lastCmdMessageSent = System.currentTimeMillis();
+            Application.doCmdBolusCancel(btConn);
+        }
+
+        @Override
+        public void doCmdBolus(double bolus) throws RemoteException {
+            lastCmdMessageSent = System.currentTimeMillis();
+            Application.doCmdBolus((int)(bolus*10),btConn);
+        }
+
+        @Override
+        public void doCmdHistorie() throws RemoteException {
 
         }
     };
@@ -270,6 +294,13 @@ public class Ruffy extends Service {
     {
         step=200;
         rtModeRunning = false;
+        Application.sendAppCommand(Application.Command.DEACTIVATE_ALL,btConn);
+    }
+
+    private void stopCmd()
+    {
+        step=200;
+        cmdModeRunning = false;
         Application.sendAppCommand(Application.Command.DEACTIVATE_ALL,btConn);
     }
 
@@ -486,6 +517,51 @@ public class Ruffy extends Service {
                     break;
                 default:
                     log(desc);
+            }
+        }
+
+        @Override
+        public void cmdBolusStarted(boolean success) {
+            if(cmdHandler!=null) {
+                try {cmdHandler.bolusStarted(success);}catch(Exception e){e.printStackTrace();}
+            }
+        }
+
+        @Override
+        public void cmdBolusState(BolusState notDelivering, double remaining) {
+            if(cmdHandler!=null) {
+                switch (notDelivering) {
+                    case ABORTED:
+                        try {cmdHandler.bolusStatus(10,remaining);}catch(Exception e){e.printStackTrace();}
+                        break;
+                    case CANCELED:
+                        try {cmdHandler.bolusStatus(5,remaining);}catch(Exception e){e.printStackTrace();}
+                        break;
+                    case DELIVERED:
+                        try {cmdHandler.bolusStatus(2,remaining);}catch(Exception e){e.printStackTrace();}
+                        break;
+                    case DELIVERING:
+                        try {cmdHandler.bolusStatus(1,remaining);}catch(Exception e){e.printStackTrace();}
+                        break;
+                    case NOT_DELIVERING:
+                        try {cmdHandler.bolusStatus(20,remaining);}catch(Exception e){e.printStackTrace();}
+                        break;
+                    default:
+                        try {cmdHandler.bolusStatus(-1,remaining);}catch(Exception e){e.printStackTrace();}
+                        break;
+                }
+
+            }
+        }
+
+        @Override
+        public void cmdBolusCanceled(boolean success) {
+            if (cmdHandler != null) {
+                try {
+                    cmdHandler.bolusCancled(success);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
         }
     };
